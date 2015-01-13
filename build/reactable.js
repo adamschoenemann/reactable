@@ -113,31 +113,6 @@
         };
     }
 
-    if (!Object.assign) {
-        Object.defineProperty(Object, "assign", {
-            enumerable: false,
-            configurable: true,
-            writable: true,
-            value: function(target, firstSource) {
-                "use strict";
-                if (target === undefined || target === null)
-            throw new TypeError("Cannot convert first argument to object");
-        var to = Object(target);
-        for (var i = 1; i < arguments.length; i++) {
-            var nextSource = arguments[i];
-            if (nextSource === undefined || nextSource === null) continue;
-            var keysArray = Object.keys(Object(nextSource));
-            for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {
-                var nextKey = keysArray[nextIndex];
-                var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);
-                if (desc !== undefined && desc.enumerable) to[nextKey] = nextSource[nextKey];
-            }
-        }
-        return to;
-            }
-        });
-    }
-
     function Unsafe(content) {
         this.content = content;
     }
@@ -147,12 +122,12 @@
     };
 
     function stringable(thing) {
-        return thing !== null && typeof(thing) !== 'undefined' && typeof(thing.toString === 'function');
+        return typeof(thing) !== 'undefined' && typeof(thing.toString === 'function');
     }
 
     // this is a bit hacky - it'd be nice if React exposed an API for this
     function isReactComponent(thing) {
-        return thing !== null && typeof(thing) === 'object' && typeof(thing.props) !== 'undefined';
+        return typeof(thing) === 'object' && typeof(thing.props) !== 'undefined';
     }
 
     React.Children.children = function(children) {
@@ -245,6 +220,7 @@
     };
 
     var Td = exports.Td = React.createClass({displayName: 'Td',
+    	// This will never work, as drops other than data are stripped
         handleClick: function(e){
             if (typeof this.props.handleClick !== 'undefined') {
                 return this.props.handleClick(e, this);
@@ -296,7 +272,6 @@
         },
         render: function() {
             var children = React.Children.children(this.props.children);
-
             if (
                 this.props.data &&
                 this.props.columns &&
@@ -339,12 +314,8 @@
                 var column = this.props.columns[index];
                 var sortClass = '';
 
-                if (this.props.sortableColumns[column.key]) {
-                  sortClass += 'reactable-header-sortable ';
-                }
-
                 if (this.props.sort.column === column.key) {
-                    sortClass += 'reactable-header-sort';
+                    sortClass = 'reactable-header-sort';
                     if (this.props.sort.direction === 1) {
                         sortClass += '-asc';
                     }
@@ -367,8 +338,7 @@
                 (this.props.filtering === true ?
                     Filterer({
                         colSpan: this.props.columns.length,
-                        onFilter: this.props.onFilter,
-                        value: this.props.currentFilter
+                        onFilter: this.props.onFilter
                     })
                 : ''),
                 React.DOM.tr({className: "reactable-column-header"}, Ths)
@@ -389,16 +359,12 @@
     });
 
     var FiltererInput = React.createClass({displayName: 'FiltererInput',
-        onChange: function() {
-            this.props.onFilter(this.getDOMNode().value);
-        },
         render: function() {
             return (
-                React.DOM.input({type: "text", 
-                       className: "reactable-filter-input", 
-                       value: this.props.value, 
-                       onKeyUp: this.onChange, 
-                       onChange: this.onChange})
+                React.DOM.input({type: "text", className: "reactable-filter-input", 
+                    onKeyUp: function(){
+                        this.props.onFilter(this.getDOMNode().value);
+                    }.bind(this)})
             );
         }
     });
@@ -412,8 +378,7 @@
             return (
                 React.DOM.tr({className: "reactable-filterer"}, 
                     React.DOM.td({colSpan: this.props.colSpan}, 
-                        FiltererInput({onFilter: this.props.onFilter, 
-                                       value: this.props.value})
+                        FiltererInput({onFilter: this.props.onFilter})
                     )
                 )
             );
@@ -643,7 +608,7 @@
         onPageChange: function(page) {
             this.setState({ currentPage: page });
         },
-        filterBy: function(filter) {
+        onFilter: function(filter) {
             this.setState({ filter: filter });
         },
         applyFilter: function(filter, children) {
@@ -685,7 +650,7 @@
                 keyB = stringable(keyB) ? keyB.toString() : '';
 
                 // Default sort
-                if (this._sortable[currentSort.column] === undefined || this._sortable[currentSort.column] === 'default') {
+                if (this._sortable[currentSort.column] === 'default') {
 
                     // Reverse direction if we're doing a reverse sort
                     if (keyA < keyB) {
@@ -774,7 +739,7 @@
                     }
 
                     return (
-                        Tr({columns: columns, key: i, data: data})
+                        Tr({columns: columns, key: i, data: data, onClick: this.props.onRowClick})
                     );
                 }.bind(this)));
             }
@@ -826,30 +791,26 @@
             // Manually transfer props
             var props = filterPropsFrom(this.props);
 
-            return React.DOM.table(Object.assign({}, props), [
-                (columns && columns.length > 0
-                    ? Thead({columns: columns, 
-                             filtering: filtering, 
-                             onFilter: this.filterBy, 
-                             currentFilter: this.state.filter, 
-                             sort: this.state.currentSort, 
-                             sortableColumns: this._sortable, 
-                             onSort: this.onSort, 
-                             key: "thead"})
-                    : null
-                ),
-                React.DOM.tbody({className: "reactable-data", key: "tbody"}, 
-                    currentChildren
-                ),
-                (pagination === true
-                    ? Paginator({colSpan: columns.length, 
-                                 numPages: numPages, 
-                                 currentPage: currentPage, 
-                                 onPageChange: this.onPageChange, 
-                                 key: "paginator"})
-                    : null
-                )
-            ]);
+            return React.DOM.table(props,
+                (columns && columns.length > 0 ?
+                    Thead({
+                        columns: columns,
+                        filtering: filtering,
+                        onFilter: this.onFilter,
+                        sort: this.state.currentSort,
+                        onSort: this.onSort
+                    })
+                : null),
+                React.DOM.tbody({className: "reactable-data"}, currentChildren),
+                (pagination === true ?
+                    Paginator({
+                        colSpan: columns.length,
+                        numPages: numPages,
+                        currentPage: currentPage,
+                        onPageChange: this.onPageChange
+                    })
+                : '')
+            );
         }
     });
 
@@ -872,7 +833,8 @@
         defaultSort: true,
         itemsPerPage: true,
         childNode: true,
-        data: true
+        data: true,
+        onRowClick: true,
     }
 
     return exports;
